@@ -10,7 +10,7 @@
 
 
 import sys # installing Packages for non-colab users 
-get_ipython().system('{sys.executable} -m pip install pandas numpy matplotlib seaborn scikit-learn xgboost')
+#get_ipython().system('{sys.executable} -m pip install pandas numpy matplotlib seaborn scikit-learn xgboost')
 
 
 import pandas as pd
