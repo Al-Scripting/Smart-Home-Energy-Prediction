@@ -1,16 +1,13 @@
-#!/usr/bin/env python
-# coding: utf-8
-
+# %% [markdown]
 # # Smart Home Energy Consumption Forecasting
 # **End-to-end ML pipeline: Preprocessing → EDA → Feature Engineering → Model Training → Evaluation**
 
+# %% [markdown]
 # # Imports
 
-# In[ ]:
-
-
-import sys # installing Packages for non-colab users 
-#get_ipython().system('{sys.executable} -m pip install pandas numpy matplotlib seaborn scikit-learn xgboost')
+# %%
+import sys # installing Packages for non-colab users
+!{sys.executable} -m pip install pandas numpy matplotlib seaborn scikit-learn xgboost
 
 
 import pandas as pd
@@ -32,12 +29,10 @@ os.makedirs("outputs", exist_ok=True)
 sns.set_theme(style="darkgrid", palette="muted")
 plt.rcParams.update({"figure.dpi": 120, "font.size": 11})
 
-
+# %% [markdown]
 # ## Step 1: Data Preprocessing
 
-# In[30]:
-
-
+# %%
 df = pd.read_csv("smart_home_energy_usage_dataset.csv")
 
 # Strip whitespace from column names to avoid hidden KeyErrors
@@ -56,12 +51,10 @@ print(f"Missing values: {df.isnull().sum().sum()}")
 print(f"Date range: {df['DateTime'].min()} -> {df['DateTime'].max()}")
 df.head()
 
-
+# %% [markdown]
 # ## Step 2: Exploratory Data Analysis (EDA)
 
-# In[31]:
-
-
+# %%
 fig, axes = plt.subplots(2, 2, figsize=(16, 11))
 fig.suptitle("Smart Home Energy — EDA Overview", fontsize=15, fontweight="bold", y=1.01)
 
@@ -111,12 +104,10 @@ plt.tight_layout()
 plt.savefig("outputs/eda_overview.png", bbox_inches="tight", dpi=150)
 plt.show()
 
-
+# %% [markdown]
 # ## Step 3: Feature Engineering
 
-# In[32]:
-
-
+# %%
 # --- 1. Basic Time Features ---
 df["Hour"]      = df["DateTime"].dt.hour
 df["DayOfWeek"] = df["DateTime"].dt.dayofweek
@@ -137,8 +128,9 @@ df["Room_Encoded"]  = df["Room"].map(
 )
 
 # --- 4. Interaction Feature ---
-# HVAC load amplified by temperature — captures heating/cooling demand
-df["HVAC_x_Temp"] = df["HVAC_Usage_kWh"] * df["Temperature_C"]
+# Temperature-humidity interaction — captures how humid heat drives cooling load
+# (replaces HVAC_x_Temp which leaked sub-meter data into the target)
+df["Temp_x_Humidity"] = df["Temperature_C"] * df["Humidity_%"]
 
 # --- 5. Handle NaNs Safely ---
 print(f"Rows before dropping NaNs: {len(df):,}")
@@ -147,23 +139,22 @@ print(f"Rows after dropping NaNs: {len(df):,}")
 
 # --- 6. Define Features ---
 
-# Linear models get environmental + contextual features only
-# Sub-meters excluded because Total = Appliance + HVAC + Water_Heater exactly
-# which causes linear models to trivially learn the summation (data leakage)
+# Sub-meter columns (Appliance, HVAC, Water_Heater) are EXCLUDED from all models
+# because Total_Energy_kWh = Appliance + HVAC + Water_Heater exactly (data leakage).
+# Tree models can reconstruct additive relationships just as easily as linear models.
+
+# Linear models — scaled features (sensitive to feature magnitude)
 FEATURES_LINEAR = [
     "Temperature_C", "Humidity_%", "Light_Lux",
-    "Motion_Binary", "Room_Encoded", "HVAC_x_Temp",
+    "Motion_Binary", "Room_Encoded", "Temp_x_Humidity",
     "Hour_sin", "Hour_cos", "Month_sin", "Month_cos",
     "DayOfWeek", "IsWeekend",
 ]
 
-# Tree models get the full feature set including sub-meter IoT sensor readings
-# Tree models handle the sub-meter features correctly because they learn
-# non-linear thresholds rather than the exact arithmetic summation
+# Tree models — same honest feature set, unscaled
 FEATURES_TREE = [
-    "Appliance_Usage_kWh", "HVAC_Usage_kWh", "Water_Heater_kWh",
     "Temperature_C", "Humidity_%", "Light_Lux",
-    "Motion_Binary", "Room_Encoded", "HVAC_x_Temp",
+    "Motion_Binary", "Room_Encoded", "Temp_x_Humidity",
     "Hour_sin", "Hour_cos", "Month_sin", "Month_cos",
     "DayOfWeek", "IsWeekend",
 ]
@@ -190,19 +181,16 @@ print(f"Train set: {len(X_train):,} samples | Test set: {len(X_test):,} samples"
 print(f"Tree features: {len(FEATURES_TREE)} | Linear features: {len(FEATURES_LINEAR)}")
 
 
+# %% [markdown]
 # ## Step 4: Model Training
 
-# In[33]:
-
-
+# %%
 results = {}
 
-
+# %% [markdown]
 # ### Linear Regression (Baseline)
 
-# In[34]:
-
-
+# %%
 # Simple baseline model - no hyperparameters to tune.
 # Requires scaled input (X_train_sc / X_test_sc) because it is
 # sensitive to feature magnitude.
@@ -235,12 +223,10 @@ print(f"Linear Regression -> MAE: {results['Linear Regression']['MAE']:.4f} | "
       f"Train: {results['Linear Regression']['Train Time (ms)']}ms | "
       f"Test: {results['Linear Regression']['Test Time (ms)']}ms")
 
-
+# %% [markdown]
 # ### XGBoost (High-Achiever)
 
-# In[35]:
-
-
+# %%
 # Gradient boosted trees - does NOT need scaled input.
 # n_estimators         : max number of boosting rounds
 # learning_rate        : shrinks each tree's contribution -> reduces overfitting
@@ -292,12 +278,10 @@ print(f"XGBoost -> MAE: {results['XGBoost']['MAE']:.4f} | "
       f"Train: {results['XGBoost']['Train Time (ms)']}ms | "
       f"Test: {results['XGBoost']['Test Time (ms)']}ms")
 
-
+# %% [markdown]
 # ### Random Forest (Average)
 
-# In[36]:
-
-
+# %%
 # Ensemble of decision trees - does NOT need scaled input.
 # n_estimators     : number of decision trees to build
 # max_depth        : maximum depth each tree can grow to
@@ -341,12 +325,10 @@ print(f"Random Forest -> MAE: {results['Random Forest']['MAE']:.4f} | "
       f"Train: {results['Random Forest']['Train Time (ms)']}ms | "
       f"Test: {results['Random Forest']['Test Time (ms)']}ms")
 
-
+# %% [markdown]
 # ## Step 5: Evaluation & Visualisation
 
-# In[37]:
-
-
+# %%
 # 5a. Metrics table — shows baseline model performance before optimization
 metrics_df = (
     pd.DataFrame(results)
@@ -357,14 +339,13 @@ metrics_df = (
 print("Model Performance Comparison")
 metrics_df
 
-
+# %% [markdown]
 # ## Step 6: Optimization
 
+# %% [markdown]
 # ### Ridge & Lasso Regression (Optimized Linear Models)
 
-# In[38]:
-
-
+# %%
 from sklearn.linear_model import RidgeCV, LassoCV
 
 # RidgeCV: adds L2 penalty to shrink large coefficients -> prevents overfitting
@@ -432,12 +413,10 @@ print(f"Lasso (alpha={lasso_model.alpha_:.4f}) -> "
       f"Train: {results['Lasso Regression']['Train Time (ms)']}ms | "
       f"Test: {results['Lasso Regression']['Test Time (ms)']}ms")
 
-
+# %% [markdown]
 # ### Randomized Search and Time Series Split for XGBoost
 
-# In[39]:
-
-
+# %%
 # Hyperparameter search space for XGBoost
 # n_estimators     : number of boosting rounds
 # learning_rate    : model learning speed -> lower = more conservative
@@ -503,13 +482,11 @@ print(f"OP XGBoost -> MAE: {results['OP XGBoost']['MAE']:.4f} | "
       f"Train: {results['OP XGBoost']['Train Time (ms)']}ms | "
       f"Test: {results['OP XGBoost']['Test Time (ms)']}ms")
 
-
+# %% [markdown]
 # ### Randomized Search and Time Series Split for Random Forest
 # 
 
-# In[40]:
-
-
+# %%
 # Hyperparameter search space for Random Forest
 # n_estimators     : number of decision trees to build
 # max_depth        : maximum depth each tree can grow to (None = unlimited)
@@ -573,12 +550,10 @@ print(f"OP Random Forest -> MAE: {results['OP Random Forest']['MAE']:.4f} | "
       f"Train: {results['OP Random Forest']['Train Time (ms)']}ms | "
       f"Test: {results['OP Random Forest']['Test Time (ms)']}ms")
 
-
+# %% [markdown]
 # ## Step 7: Re-evaluation & Visualisation
 
-# In[41]:
-
-
+# %%
 # Full metrics table — all models including optimized versions
 metrics_df = (
     pd.DataFrame(results)
@@ -589,13 +564,11 @@ metrics_df = (
 print("Model Performance Comparison")
 metrics_df
 
-
+# %% [markdown]
 # ## Step 8: Evaluation Plots
 # 
 
-# In[42]:
-
-
+# %%
 best_model_name = metrics_df.index[0]  # lowest RMSE
 best_preds = results[best_model_name]["Predictions"]
 residuals = y_test.values - best_preds
@@ -643,9 +616,10 @@ plt.tight_layout()
 plt.savefig("outputs/evaluation_plots.png", bbox_inches="tight", dpi=150)
 plt.show()
 
-
+# %% [markdown]
 # ## Step 9: Raspberry Pi Results
 
+# %% [markdown]
 # ### Raspberry Pi Metrics
 # 
 # | Model             | MAE | RMSE | R2 | Training Time (ms) | Testing Time (ms) |
@@ -656,6 +630,7 @@ plt.show()
 # 
 # 
 
+# %% [markdown]
 # ## Step 10: Current vs Raspberry Pi Comparison
 # 
 # ### Laptop vs Raspberry Pi Comparison
@@ -666,4 +641,7 @@ plt.show()
 # | Random Forest     |     |      |    |                              |                                     |                             |                                   |
 # | XGBoost           |     |      |    |                              |                                     |                             |                                   |
 
+# %% [markdown]
 # 
+
+
